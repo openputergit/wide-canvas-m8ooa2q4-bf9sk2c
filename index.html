@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkeuoExpense - Track Your Spending</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+    :root {
+        --main-bg: #f0f2f5;
+        --card-bg: #ffffff;
+        --shadow: rgba(0, 0, 0, 0.2);
+    }
+
+    body {
+        font-family: 'Crimson Pro', serif;
+        background: var(--main-bg);
+    }
+
+    .skeuomorphic-card {
+        background: var(--card-bg);
+        border-radius: 10px;
+        box-shadow: 
+            -8px -8px 15px rgba(255, 255, 255, 0.9),
+            8px 8px 15px rgba(0, 0, 0, 0.1),
+            inset 1px 1px 2px rgba(255, 255, 255, 0.3),
+            inset -1px -1px 2px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .skeuomorphic-button {
+        background: linear-gradient(145deg, #e6e6e6, #ffffff);
+        box-shadow: 
+            4px 4px 8px rgba(0, 0, 0, 0.1),
+            -4px -4px 8px rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        transition: all 0.2s ease;
+    }
+
+    .skeuomorphic-button:active {
+        background: linear-gradient(145deg, #ffffff, #e6e6e6);
+        box-shadow: 
+            inset 4px 4px 8px rgba(0, 0, 0, 0.1),
+            inset -4px -4px 8px rgba(255, 255, 255, 0.9);
+    }
+
+    .skeuomorphic-input {
+        background: #f5f5f5;
+        box-shadow: 
+            inset 2px 2px 4px rgba(0, 0, 0, 0.1),
+            inset -2px -2px 4px rgba(255, 255, 255, 0.9);
+    }
+
+    .chatbot-window {
+        position: fixed;
+        bottom: 80px;
+        right: 20px;
+        width: 300px;
+        height: 400px;
+        display: none;
+    }
+
+    .chat-messages {
+        height: 320px;
+        overflow-y: auto;
+    }
+
+    @media (max-width: 640px) {
+        .chatbot-window {
+            width: 90%;
+            right: 5%;
+            bottom: 70px;
+        }
+    }
+</style>
+</head>
+<body class="min-h-screen p-4">
+    <!-- Auth Container -->
+    <div id="authContainer" class="max-w-md mx-auto skeuomorphic-card p-6">
+        <h2 class="text-2xl font-bold mb-4">Welcome to SkeuoExpense</h2>
+        <form id="authForm" class="space-y-4">
+            <input type="email" id="email" placeholder="Email" class="w-full p-3 rounded skeuomorphic-input">
+            <input type="password" id="password" placeholder="Password" class="w-full p-3 rounded skeuomorphic-input">
+            <button type="submit" class="w-full p-3 rounded skeuomorphic-button">Login</button>
+            <p class="text-center">
+                <span id="authToggle" class="cursor-pointer text-blue-600">Switch to Register</span>
+            </p>
+        </form>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="max-w-6xl mx-auto hidden">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Spending Overview -->
+            <div class="skeuomorphic-card p-6">
+                <h2 class="text-2xl font-bold mb-4">Spending Overview</h2>
+                <canvas id="spendingChart"></canvas>
+                <p class="mt-4 text-xl">Total Spent: <span id="totalSpent">$0.00</span></p>
+                <p id="budgetAdvice" class="mt-2 text-sm text-gray-600"></p>
+            </div>
+
+            <!-- Recent Expenses -->
+            <div class="skeuomorphic-card p-6">
+                <h2 class="text-2xl font-bold mb-4">Recent Expenses</h2>
+                <div id="recentExpenses" class="space-y-2"></div>
+            </div>
+        </div>
+
+        <!-- Add Expense Button -->
+        <button id="addExpenseBtn" class="fixed bottom-4 right-4 p-4 rounded-full skeuomorphic-button">
+            <i class="bi bi-plus-lg text-2xl"></i>
+        </button>
+    </div>
+
+    <!-- Expense Form -->
+    <div id="expenseForm" class="max-w-md mx-auto skeuomorphic-card p-6 hidden">
+        <h2 class="text-2xl font-bold mb-4">Add Expense</h2>
+        <form id="newExpenseForm" class="space-y-4">
+            <input type="number" id="amount" placeholder="Amount" class="w-full p-3 rounded skeuomorphic-input">
+            <select id="category" class="w-full p-3 rounded skeuomorphic-input">
+                <option value="">Select Category</option>
+                <option value="Office Supplies">Office Supplies</option>
+                <option value="Travel">Travel</option>
+                <option value="Utilities">Utilities</option>
+                <option value="Software">Software</option>
+                <option value="Other">Other</option>
+            </select>
+            <input type="date" id="date" class="w-full p-3 rounded skeuomorphic-input">
+            <textarea id="description" placeholder="Description" class="w-full p-3 rounded skeuomorphic-input"></textarea>
+            <button type="submit" class="w-full p-3 rounded skeuomorphic-button">Add Expense</button>
+            <button type="button" id="cancelExpense" class="w-full p-3 rounded skeuomorphic-button">Cancel</button>
+        </form>
+    </div>
+
+    <!-- Chatbot -->
+    <button id="chatToggle" class="fixed bottom-4 left-4 p-4 rounded-full skeuomorphic-button">
+        <i class="bi bi-chat-dots text-2xl"></i>
+    </button>
+
+    <div id="chatbot" class="chatbot-window skeuomorphic-card">
+        <div class="p-4 border-b">
+            <h3 class="text-lg font-bold">SkeuoExpense Assistant</h3>
+        </div>
+        <div id="chatMessages" class="chat-messages p-4 space-y-2"></div>
+        <div class="p-4 border-t">
+            <input type="text" id="chatInput" placeholder="Type your question..." 
+                   class="w-full p-2 rounded skeuomorphic-input">
+        </div>
+    </div>
+
+<script>
+// Firebase Configuration
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "your-app.firebaseapp.com",
+    projectId: "your-project-id",
+    storageBucket: "your-app.appspot.com",
+    messagingSenderId: "your-sender-id",
+    appId: "your-app-id"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let currentUser = null;
+let expenses = [];
+
+// Auth Logic
+const authForm = document.getElementById('authForm');
+const authToggle = document.getElementById('authToggle');
+let isLogin = true;
+
+authToggle.addEventListener('click', () => {
+    isLogin = !isLogin;
+    authToggle.textContent = isLogin ? 'Switch to Register' : 'Switch to Login';
+});
+
+authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+
+    try {
+        if (isLogin) {
+            await auth.signInWithEmailAndPassword(email, password);
+        } else {
+            await auth.createUserWithEmailAndPassword(email, password);
+        }
+    } catch (error) {
+        alert(error.message);
+    }
+});
+
+// Auth State Observer
+auth.onAuthStateChanged((user) => {
+    currentUser = user;
+    if (user) {
+        document.getElementById('authContainer').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
+        loadExpenses();
+    } else {
+        document.getElementById('authContainer').classList.remove('hidden');
+        document.getElementById('dashboard').classList.add('hidden');
+    }
+});
+
+// Expense Management
+const loadExpenses = async () => {
+    const snapshot = await db.collection('expenses')
+        .where('userId', '==', currentUser.uid)
+        .orderBy('date', 'desc')
+        .get();
+
+    expenses = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    }));
+
+    updateDashboard();
+};
+
+const addExpense = async (expenseData) => {
+    try {
+        await db.collection('expenses').add({
+            ...expenseData,
+            userId: currentUser.uid,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        await loadExpenses();
+        showDashboard();
+    } catch (error) {
+        alert('Error adding expense: ' + error.message);
+    }
+};
+
+// UI Updates
+const updateDashboard = () => {
+    updateRecentExpenses();
+    updateSpendingChart();
+    updateBudgetAdvice();
+    updateCostCuttingAdvice();
+};
+
+const updateRecentExpenses = () => {
+    const container = document.getElementById('recentExpenses');
+    container.innerHTML = expenses.slice(0, 5).map(expense => `
+        <div class="p-3 rounded skeuomorphic-card">
+            <div class="flex justify-between">
+                <span class="font-bold">$${expense.amount.toFixed(2)}</span>
+                <span>${new Date(expense.date).toLocaleDateString()}</span>
+            </div>
+            <div class="text-sm text-gray-600">
+                <span>${expense.category}</span>
+                <p>${expense.description}</p>
+            </div>
+        </div>
+    `).join('');
+};
+
+const updateSpendingChart = () => {
+    const ctx = document.getElementById('spendingChart').getContext('2d');
+    const categoryTotals = {};
+    
+    expenses.forEach(expense => {
+        categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + expense.amount;
+    });
+
+    new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: Object.keys(categoryTotals),
+            datasets: [{
+                data: Object.values(categoryTotals),
+                backgroundColor: [
+                    '#FF6384',
+                    '#36A2EB',
+                    '#FFCE56',
+                    '#4BC0C0',
+                    '#9966FF'
+                ]
+            }]
+        }
+    });
+
+    const total = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+    document.getElementById('totalSpent').textContent = `$${total.toFixed(2)}`;
+};
+
+const updateBudgetAdvice = () => {
+    const total = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+    const advice = total > 1000 
+        ? "Consider reviewing high-spending categories" 
+        : "Great job staying within budget!";
+    document.getElementById('budgetAdvice').textContent = advice;
+};
+
+// AI Cost Cutting Advice
+const updateCostCuttingAdvice = () => {
+    const total = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+    const affordableSpending = total / expenses.length;
+
+    const costCuttingAdvice = affordableSpending > 100 
+        ? "Consider reducing non-essential spending." 
+        : "Your spending is under control, keep it up!";
+    
+    document.getElementById('budgetAdvice').textContent += ` | Advice: ${costCuttingAdvice}`;
+};
+
+// Form Handling
+document.getElementById('addExpenseBtn').addEventListener('click', () => {
+    document.getElementById('dashboard').classList.add('hidden');
+    document.getElementById('expenseForm').classList.remove('hidden');
+});
+
+document.getElementById('cancelExpense').addEventListener('click', showDashboard);
+
+document.getElementById('newExpenseForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const formData = {
+        amount: parseFloat(document.getElementById('amount').value),
+        category: document.getElementById('category').value,
+        date: document.getElementById('date').value,
+        description: document.getElementById('description').value
+    };
+    addExpense(formData);
+});
+
+// Chatbot
+const chatToggle = document.getElementById('chatToggle');
+const chatbot = document.getElementById('chatbot');
+const chatInput = document.getElementById('chatInput');
+const chatMessages = document.getElementById('chatMessages');
+
+chatToggle.addEventListener('click', () => {
+    chatbot.style.display = chatbot.style.display === 'none' ? 'block' : 'none';
+});
+
+chatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        const query = chatInput.value.toLowerCase();
+        let response = '';
+
+        if (query.startsWith('show me')) {
+            const category = query.replace('show me ', '').replace(' spending', '');
+            const total = expenses
+                .filter(exp => exp.category.toLowerCase() === category)
+                .reduce((sum, exp) => sum + exp.amount, 0);
+            response = `${category} spending: $${total.toFixed(2)}`;
+        } else if (query === 'total spent this month') {
+            const now = new Date();
+            const monthlyTotal = expenses
+                .filter(exp => new Date(exp.date).getMonth() === now.getMonth())
+                .reduce((sum, exp) => sum + exp.amount, 0);
+            response = `This month's spending: $${monthlyTotal.toFixed(2)}`;
+        } else if (query === 'help') {
+            response = 'Try these commands:\n- Show me [category] spending\n- Total spent this month\n- Help';
+        } else {
+            response = "Sorry, I didn't understand. Try 'Show me travel spending' or 'Help'.";
+        }
+
+        addChatMessage('You', chatInput.value);
+        addChatMessage('Bot', response);
+        chatInput.value = '';
+    }
+});
+
+const addChatMessage = (sender, message) => {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'mb-2';
+    messageDiv.innerHTML = `
+        <strong>${sender}:</strong>
+        <div class="ml-2">${message}</div>
+    `;
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+};
+
+// Utility Functions
+function showDashboard() {
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('expenseForm').classList.add('hidden');
+}
+</script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
